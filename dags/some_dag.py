@@ -8,7 +8,7 @@ def hello_airflow():
 
 # Define the DAG
 with DAG(
-    dag_id="dag_hello_airflow_v",
+    dag_id="dag_hello_airflow_v2",
     start_date=datetime(2025, 11, 20),
     schedule="@daily",
     catchup=False,
