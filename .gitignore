@@ -1,0 +1,14 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# IDE / Editor
+.vscode/
+.idea/
+
+# Airflow
+/airflow.db
+/logs/
+/tmp/
