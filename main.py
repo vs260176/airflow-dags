@@ -16,7 +16,7 @@ with DAG(
 ) as dag:
 
     task1 = PythonOperator(
-        task_id="hello_airflow",
+        task_id="task_hello_airflow",
         python_callable=hello_airflow
     )
 
