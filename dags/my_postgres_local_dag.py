@@ -9,7 +9,8 @@ POSTGRES_CONN_ID = 'my_postgres_local'
 @dag(
     dag_id='postgres_import_workaround_dag',
     start_date=datetime(2023, 1, 1),
-    schedule_interval=None,
+    # schedule_interval=None,  <-- Старый параметр
+    schedule=None,           # <-- Новый, правильный параметр
     catchup=False,
 )
 def process_hourly_db_partition_dag_workaround():
