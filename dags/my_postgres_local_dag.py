@@ -72,7 +72,7 @@ def process_hourly_db_partition_dag_v2():
             INSERT INTO hourly_summary (interval_start, interval_end, total_events)
             SELECT 
                 '{ds_start}'::timestamp AS interval_start, 
-                '{ds_end}::timestamp AS interval_end,
+                '{ds_end}'::timestamp AS interval_end,
                 COUNT(*) AS total_events
             FROM 
                 raw_events
