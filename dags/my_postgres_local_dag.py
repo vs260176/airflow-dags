@@ -41,6 +41,7 @@ def process_hourly_db_partition_dag_v2():
         sql_create = """
             CREATE TABLE IF NOT EXISTS hourly_summary (
                 interval_start TIMESTAMP PRIMARY KEY,
+                interval_end TIMESTAMP NOT NULL,
                 total_events INT,
                 processed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
@@ -68,9 +69,10 @@ def process_hourly_db_partition_dag_v2():
         # Определяем SQL-запрос для агрегации и вставки данных.
         # Используем f-строку Python для динамической вставки переменных ds_start и ds_end.
         sql_query = f"""
-            INSERT INTO hourly_summary (interval_start, total_events)
+            INSERT INTO hourly_summary (interval_start, interval_end, total_events)
             SELECT 
                 '{ds_start}'::timestamp AS interval_start, 
+                '{ds_end}::timestamp AS interval_end,
                 COUNT(*) AS total_events
             FROM 
                 raw_events
