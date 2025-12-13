@@ -27,7 +27,7 @@ POSTGRES_CONN_ID = 'my_postgres_local'
     dag_id='process_hourly_db_partition_dag_v2',
     # Дата начала выполнения DAG. Airflow начнет планировать запуски с этого 
     # момента.
-    start_date=datetime(2025, 12, 12),
+    start_date=datetime(2025, 12, 9),
     # Расписание выполнения. '@hourly' означает запуск каждый час.
     schedule='@hourly',
     # Параметр catchup=False отключает "наверстывание" пропущенных запусков 
