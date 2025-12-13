@@ -76,18 +76,12 @@ def process_hourly_db_partition_dag_v2():
         # Импорт Хука происходит внутри функции, когда задача уже запущена
         # Ленивый импорт для оптимизации загрузки DAG файла.
         from airflow.providers.postgres.hooks.postgres import PostgresHook
-
+        # Получаем время окончания интервала выполнения DAG из контекста Airflow,
+        # вычисляем время начала интервала и форматируем их в строки SQL.
         end = kwargs["data_interval_end"]
         start = end - timedelta(hours=1)
 
         ds_start = start.strftime('%Y-%m-%d %H:%M:%S')
-        ds_end = end.strftime('%Y-%m-%d %H:%M:%S')
-        
-        # Получаем время начала интервала выполнения DAG из контекста Airflow 
-        # и форматируем его в строку SQL.
-        ds_start = start.strftime('%Y-%m-%d %H:%M:%S')
-        # Получаем время окончания интервала выполнения DAG из контекста 
-        # Airflow и форматируем его в строку SQL.
         ds_end = end.strftime('%Y-%m-%d %H:%M:%S')
 
         # Определяем SQL-запрос для агрегации и вставки данных.
@@ -95,19 +89,25 @@ def process_hourly_db_partition_dag_v2():
         # ds_start и ds_end.
         sql_query = (
             f"INSERT INTO hourly_summary (interval_start, interval_end, total_events)\n"
-            f"SELECT \n"
-            f"    '{ds_start}'::timestamp AS interval_start, \n"
+            # Мы выбираем интервал напрямую, а количество событий - из подзапроса
+            f"SELECT\n"
+            f"    '{ds_start}'::timestamp AS interval_start,\n"
             f"    '{ds_end}'::timestamp AS interval_end,\n"
-            f"    COUNT(*) AS total_events\n"
-            f"FROM \n"
-            f"    raw_events\n"
-            f"WHERE \n"
-            f"    event_time >= '{ds_start}'::timestamp AND \n"
-            f"    event_time < '{ds_end}'::timestamp\n"
-            f"GROUP BY \n"
-            f"    interval_start, interval_end\n"
-            f"ON CONFLICT (interval_start) \n"
-            f"DO UPDATE SET \n"
+            f"    COALESCE(sub.event_count, 0) AS total_events\n"
+            f"FROM\n"
+            f"    (SELECT 1) AS dummy_select_one\n" # Гарантируем, что этот внешний SELECT всегда вернет 1 строку
+            f"LEFT JOIN\n"
+            f"    (\n"
+            f"        SELECT \n"
+            f"            COUNT(*) AS event_count\n"
+            f"        FROM \n"
+            f"            raw_events\n"
+            f"        WHERE \n"
+            f"            event_time >= '{ds_start}'::timestamp AND \n"
+            f"            event_time < '{ds_end}'::timestamp\n"
+            f"    ) AS sub ON TRUE\n" # Присоединяем результат агрегации (если есть) ко внешней строке
+            f"ON CONFLICT (interval_start, interval_end)\n"
+            f"DO UPDATE SET\n"
             f"    total_events = EXCLUDED.total_events;"
         )
 
