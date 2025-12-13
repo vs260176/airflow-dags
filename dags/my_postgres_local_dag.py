@@ -32,7 +32,7 @@ POSTGRES_CONN_ID = 'my_postgres_local'
     schedule='@hourly',
     # Параметр catchup=False отключает "наверстывание" пропущенных запусков 
     # между start_date и текущим моментом.
-    catchup=True,
+    catchup=False,
 )
 # Определяем функцию, которая содержит логику всего DAG. Название функции 
 # совпадает с dag_id.
