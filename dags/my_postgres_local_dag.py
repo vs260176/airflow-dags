@@ -94,8 +94,7 @@ def process_hourly_db_partition_dag_v2():
         # Используем f-строку Python для динамической вставки переменных 
         # ds_start и ds_end.
         sql_query = (
-            f"INSERT INTO hourly_summary "
-            f"(interval_start, interval_end, total_events)\n"
+            f"INSERT INTO hourly_summary (interval_start, interval_end, total_events)\n"
             f"SELECT \n"
             f"    '{ds_start}'::timestamp AS interval_start, \n"
             f"    '{ds_end}'::timestamp AS interval_end,\n"
@@ -105,6 +104,11 @@ def process_hourly_db_partition_dag_v2():
             f"WHERE \n"
             f"    event_time >= '{ds_start}'::timestamp AND \n"
             f"    event_time < '{ds_end}'::timestamp\n"
+            f"GROUP BY \n"
+            f"    interval_start, interval_end\n"
+            f"ON CONFLICT (interval_start) \n"
+            f"DO UPDATE SET \n"
+            f"    total_events = EXCLUDED.total_events;"
         )
         
         # Создаем экземпляр PostgresHook.
