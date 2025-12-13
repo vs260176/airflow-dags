@@ -110,7 +110,7 @@ def process_hourly_db_partition_dag_v2():
             f"DO UPDATE SET \n"
             f"    total_events = EXCLUDED.total_events;"
         )
-        
+
         # Создаем экземпляр PostgresHook.
         pg_hook = PostgresHook(postgres_conn_id=POSTGRES_CONN_ID)
         # Выполняем SQL-запрос.
@@ -123,6 +123,7 @@ def process_hourly_db_partition_dag_v2():
     # (task_1 >> task_2),
     # что означает: task_1 должна успешно завершиться перед запуском task_2.
     create_summary_table_task() >> aggregate_and_insert_data()
+
 
 # Вызываем функцию-фабрику DAG, чтобы зарегистрировать его в глобальном 
 # пространстве имен Airflow.
