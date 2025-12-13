@@ -106,7 +106,7 @@ def process_hourly_db_partition_dag_v2():
             f"            event_time >= '{ds_start}'::timestamp AND \n"
             f"            event_time < '{ds_end}'::timestamp\n"
             f"    ) AS sub ON TRUE\n" # Присоединяем результат агрегации (если есть) ко внешней строке
-            f"ON CONFLICT (interval_start, interval_end)\n"
+            f"ON CONFLICT (interval_start)\n"
             f"DO UPDATE SET\n"
             f"    total_events = EXCLUDED.total_events;"
         )
