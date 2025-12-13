@@ -1,5 +1,5 @@
-# Импортируем класс datetime и timedelta из стандартной библиотеки Python для работы с 
-# датами и временем.
+# Импортируем класс datetime и timedelta из стандартной библиотеки Python 
+# для работы с датами и временем.
 from datetime import datetime, timedelta
 # Импортируем декораторы dag и task из airflow.decorators. Это современный 
 # способ определения DAG и задач.
@@ -85,10 +85,10 @@ def process_hourly_db_partition_dag_v2():
         
         # Получаем время начала интервала выполнения DAG из контекста Airflow 
         # и форматируем его в строку SQL.
-        ds_start = kwargs['data_interval_start'].strftime('%Y-%m-%d %H:%M:%S')
+        ds_start = start.strftime('%Y-%m-%d %H:%M:%S')
         # Получаем время окончания интервала выполнения DAG из контекста 
         # Airflow и форматируем его в строку SQL.
-        ds_end = kwargs['data_interval_end'].strftime('%Y-%m-%d %H:%M:%S')
+        ds_end = end.strftime('%Y-%m-%d %H:%M:%S')
 
         # Определяем SQL-запрос для агрегации и вставки данных.
         # Используем f-строку Python для динамической вставки переменных 
