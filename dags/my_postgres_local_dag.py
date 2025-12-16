@@ -45,6 +45,25 @@ POSTGRES_CONN_ID = 'my_postgres_local'
 # совпадает с dag_id.
 def process_hourly_db_partition_dag_v2():
 
+    def get_postgres_connection():
+        """Получаем подключение к PostgreSQL через новый API"""
+        from airflow.hooks.base import BaseHook
+
+        from sqlalchemy import create_engine
+
+        # Получаем информацию о подключении
+        conn = BaseHook.get_connection(POSTGRES_CONN_ID)
+
+        # Формируем строку подключения для SQLAlchemy
+        connection_string = (
+            f"postgresql://{conn.login}:{conn.password}"
+            f"@{conn.host}:{conn.port}/{conn.schema}"
+        )
+
+        # Создаем engine
+        engine = create_engine(connection_string)
+        return engine
+
     # Задача 1: Создать целевую таблицу, если ее нет
     # Применяем декоратор @task к функции, превращая ее в задачу Airflow.
     @task
@@ -52,10 +71,16 @@ def process_hourly_db_partition_dag_v2():
         # Импорт Хука происходит внутри функции, когда задача уже запущена
         # Ленивый импорт: модуль загружается в память только при вызове
         # функции (во время выполнения задачи).
-        from airflow.providers.postgres.hooks.postgres import PostgresHook
+        # from airflow.providers.postgres.hooks.postgres import PostgresHook
         # Создаем экземпляр PostgresHook, используя заданный ранее
         # connection ID.
-        pg_hook = PostgresHook(postgres_conn_id=POSTGRES_CONN_ID)
+        # pg_hook = PostgresHook(postgres_conn_id=POSTGRES_CONN_ID)
+
+        """Создать целевую таблицу, если ее нет"""
+        engine = get_postgres_connection()
+
+        # Импортируем функцию text из SQLAlchemy для выполнения SQL-запросов.
+        from sqlalchemy import text
 
         # Определяем SQL-запрос в виде многострочной строки.
         sql_create = """
@@ -67,9 +92,15 @@ def process_hourly_db_partition_dag_v2():
             );
         """
         # Выполняем SQL-запрос с помощью Хука.
-        pg_hook.run(sql_create)
+        # pg_hook.run(sql_create)
         # Выводим сообщение в логи задачи Airflow.
+        # print("Summary table ensured to exist.")
+        with engine.connect() as connection:
+            connection.execute(text(sql_create))
+            connection.commit()
+
         print("Summary table ensured to exist.")
+        engine.dispose()
 
     # Задача 2: Обработать данные за конкретный интервал и вставить их
     # Применяем декоратор @task, превращая функцию в задачу Airflow.
@@ -80,9 +111,12 @@ def process_hourly_db_partition_dag_v2():
     def aggregate_and_insert_data(
         **kwargs
     ):
+        # Импортируем функцию text из SQLAlchemy для выполнения SQL-запросов.
+        from sqlalchemy import text
+
         # Импорт Хука происходит внутри функции, когда задача уже запущена
         # Ленивый импорт для оптимизации загрузки DAG файла.
-        from airflow.providers.postgres.hooks.postgres import PostgresHook
+        # from airflow.providers.postgres.hooks.postgres import PostgresHook
         # Получаем время окончания интервала выполнения DAG
         # из контекста Airflow (UTC + 3h),
         # вычисляем время начала интервала
@@ -126,11 +160,20 @@ def process_hourly_db_partition_dag_v2():
         )
 
         # Создаем экземпляр PostgresHook.
-        pg_hook = PostgresHook(postgres_conn_id=POSTGRES_CONN_ID)
+        # pg_hook = PostgresHook(postgres_conn_id=POSTGRES_CONN_ID)
         # Выполняем SQL-запрос.
-        pg_hook.run(sql_query)
+        # pg_hook.run(sql_query)
         # Выводим сообщение в логи.
+        # print("Data aggregation complete.")
+
+        engine = get_postgres_connection()
+
+        with engine.connect() as connection:
+            connection.execute(text(sql_query))
+            connection.commit()
+
         print("Data aggregation complete.")
+        engine.dispose()
 
     # Определение последовательности выполнения задач
     # Определяем зависимости между задачами с помощью оператора >>
