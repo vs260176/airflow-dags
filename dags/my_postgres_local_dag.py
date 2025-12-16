@@ -32,7 +32,13 @@ POSTGRES_CONN_ID = 'my_postgres_local'
     schedule='@hourly',
     # Параметр catchup=False отключает "наверстывание" пропущенных запусков 
     # между start_date и текущим моментом.
-    catchup=False,
+    catchup=True,  # Всегда включен
+    max_active_runs=1,  # Ограничиваем параллелизм
+    default_args={
+        'retries': 3,
+        'retry_delay': timedelta(minutes=5),
+    },
+    tags=['monitoring', 'catchup'],
 )
 # Определяем функцию, которая содержит логику всего DAG. Название функции 
 # совпадает с dag_id.
