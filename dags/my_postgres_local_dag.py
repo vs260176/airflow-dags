@@ -2,7 +2,7 @@
 # из стандартной библиотеки Python
 # для работы с датами и временем.
 from datetime import datetime, timedelta
-# Импортируем декораторы dag и task из airflow.decorators. 
+# Импортируем декораторы dag и task из airflow.decorators.
 # Это современный способ определения DAG и задач.
 from airflow.decorators import dag, task
 
@@ -99,7 +99,7 @@ def process_hourly_db_partition_dag_v2():
         sql_query = (
             f"INSERT INTO hourly_summary \n"
             f"(interval_start, interval_end, total_events)\n"
-            # Мы выбираем интервал напрямую, а количество событий - из 
+            # Мы выбираем интервал напрямую, а количество событий - из
             # подзапроса
             f"SELECT\n"
             f"    '{ds_start}'::timestamp AS interval_start,\n"
@@ -117,7 +117,7 @@ def process_hourly_db_partition_dag_v2():
             f"        WHERE \n"
             f"            event_time >= '{ds_start}'::timestamp AND \n"
             f"            event_time < '{ds_end}'::timestamp\n"
-            # Присоединяем результат агрегации (если есть) 
+            # Присоединяем результат агрегации (если есть)
             # ко внешней строке
             f"    ) AS sub ON TRUE\n"
             f"ON CONFLICT (interval_start)\n"
