@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 # Импортируем декораторы dag и task из airflow.decorators.
 # Это современный способ определения DAG и задач.
 from airflow.sdk import dag, task
+from airflow.sdk.BaseHook import BaseHook
 
 # ЭТОТ ИМПОРТ УДАЛЕН ИЗ ВЕРХНЕГО УРОВНЯ:
 # from airflow.providers.postgres.operators.postgres import PostgresOperator
@@ -47,7 +48,8 @@ def process_hourly_db_partition_dag_v2():
 
     def get_postgres_connection():
         """Получаем подключение к PostgreSQL через новый API"""
-        from airflow.sdk.BaseHook import BaseHook
+        # from airflow.sdk.BaseHook import BaseHook
+        # from airflow.hooks.base import BaseHook
 
         from sqlalchemy import create_engine
 
