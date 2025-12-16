@@ -97,14 +97,17 @@ def process_hourly_db_partition_dag_v2():
         # Используем f-строку Python для динамической вставки переменных
         # ds_start и ds_end.
         sql_query = (
-            f"INSERT INTO hourly_summary (interval_start, interval_end, total_events)\n"
-            # Мы выбираем интервал напрямую, а количество событий - из подзапроса
+            f"INSERT INTO hourly_summary \n"
+            f"(interval_start, interval_end, total_events)\n"
+            # Мы выбираем интервал напрямую, а количество событий - из 
+            # подзапроса
             f"SELECT\n"
             f"    '{ds_start}'::timestamp AS interval_start,\n"
             f"    '{ds_end}'::timestamp AS interval_end,\n"
             f"    COALESCE(sub.event_count, 0) AS total_events\n"
             f"FROM\n"
-            f"    (SELECT 1) AS dummy_select_one\n" # Гарантируем, что этот внешний SELECT всегда вернет 1 строку
+            # Гарантируем, что этот внешний SELECT всегда вернет 1 строку
+            f"    (SELECT 1) AS dummy_select_one\n" 
             f"LEFT JOIN\n"
             f"    (\n"
             f"        SELECT \n"
@@ -114,7 +117,9 @@ def process_hourly_db_partition_dag_v2():
             f"        WHERE \n"
             f"            event_time >= '{ds_start}'::timestamp AND \n"
             f"            event_time < '{ds_end}'::timestamp\n"
-            f"    ) AS sub ON TRUE\n" # Присоединяем результат агрегации (если есть) ко внешней строке
+            # Присоединяем результат агрегации (если есть) 
+            # ко внешней строке
+            f"    ) AS sub ON TRUE\n"
             f"ON CONFLICT (interval_start)\n"
             f"DO UPDATE SET\n"
             f"    total_events = EXCLUDED.total_events;"
