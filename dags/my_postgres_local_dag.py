@@ -76,9 +76,11 @@ def process_hourly_db_partition_dag_v2():
         # Импорт Хука происходит внутри функции, когда задача уже запущена
         # Ленивый импорт для оптимизации загрузки DAG файла.
         from airflow.providers.postgres.hooks.postgres import PostgresHook
-        # Получаем время окончания интервала выполнения DAG из контекста Airflow,
-        # вычисляем время начала интервала и форматируем их в строки SQL.
-        end = kwargs["data_interval_end"]
+        # Получаем время окончания интервала выполнения DAG 
+        # из контекста Airflow (UTC + 3h), 
+        # вычисляем время начала интервала 
+        # и форматируем их в строки SQL.
+        end = kwargs["data_interval_end"] + timedelta(hours=3)
         start = end - timedelta(hours=1)
 
         ds_start = start.strftime('%Y-%m-%d %H:%M:%S')
