@@ -95,12 +95,17 @@ def process_hourly_db_partition_dag_v2():
         # pg_hook.run(sql_create)
         # Выводим сообщение в логи задачи Airflow.
         # print("Summary table ensured to exist.")
-        with engine.connect() as connection:
-            connection.execute(text(sql_create))
-            connection.commit()
+        try:
+            with engine.begin() as connection:
+                # begin() автоматически коммитит транзакцию
+                connection.execute(text(sql_create))
+            print("Summary table ensured to exist.")
 
-        print("Summary table ensured to exist.")
-        engine.dispose()
+        except Exception as e:
+            print(f"Error creating table: {e}")
+            raise
+        finally:
+            engine.dispose()
 
     # Задача 2: Обработать данные за конкретный интервал и вставить их
     # Применяем декоратор @task, превращая функцию в задачу Airflow.
@@ -168,12 +173,16 @@ def process_hourly_db_partition_dag_v2():
 
         engine = get_postgres_connection()
 
-        with engine.connect() as connection:
-            connection.execute(text(sql_query))
-            connection.commit()
-
-        print("Data aggregation complete.")
-        engine.dispose()
+        try:
+            with engine.begin() as connection:
+                connection.execute(text(sql_query))
+            print("Data aggregation complete.")
+   
+        except Exception as e:
+            print(f"Error inserting data: {e}")
+            raise
+        finally:
+            engine.dispose()
 
     # Определение последовательности выполнения задач
     # Определяем зависимости между задачами с помощью оператора >>
