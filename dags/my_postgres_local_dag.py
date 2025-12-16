@@ -69,7 +69,7 @@ def process_hourly_db_partition_dag_v2():
     # **kwargs используется для доступа к контекстным переменным Airflow 
     # (например, data_interval_start).
 
-    @task
+    @task(retries=3)
     def aggregate_and_insert_data(
         **kwargs
     ):
