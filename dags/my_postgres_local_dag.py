@@ -20,7 +20,7 @@ from airflow.sdk import dag, task
 # Postgres.
 # Этот идентификатор должен быть предварительно настроен в веб-интерфейсе
 # Airflow.
-POSTGRES_CONN_ID = 'my_postgres_local'
+POSTGRES_CONN_ID = 'postgre_k8s'
 
 
 # Применяем декоратор @dag к функции для регистрации ее в Airflow как DAG.
