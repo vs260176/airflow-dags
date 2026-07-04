@@ -311,4 +311,4 @@ with DAG(
         print(f"Парсинг успешно завершён! В витрину записано {inserted_count} строк с разделением на 4 предмета.")
 
     # Строим граф зависимостей
-    extract_and_upload_to_s3 >> load_s3_to_postgres_staging >> transform_staging_to_dim
+    extract_and_upload_to_s3() >> load_s3_to_postgres_staging() >> transform_staging_to_dim()
