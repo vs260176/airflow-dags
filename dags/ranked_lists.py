@@ -36,7 +36,7 @@ with DAG(
     dag_id='kubsu_abitlist_to_minio',
     default_args=default_args,
     description='Парсинг списков абитуриентов КубГУ и загрузка в MinIO S3',
-    schedule_interval='@daily',
+    schedule='@daily',
     catchup=False,
     tags=['kubsu', 'parser', 's3'],
 ) as dag:
