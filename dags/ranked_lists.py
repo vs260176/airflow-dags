@@ -189,127 +189,126 @@ with DAG(
 
         print("Все файлы успешно перенесены в staging_kubsu_ranked_lists!")
 
-@task
-def transform_staging_to_dim():
-    pg_hook = PostgresHook(postgres_conn_id=POSTGRES_CONN_ID)
+    @task
+    def transform_staging_to_dim():
+        pg_hook = PostgresHook(postgres_conn_id=POSTGRES_CONN_ID)
+        
+        print("Очистка витрины dim_ranked_applicants...")
+        pg_hook.run("TRUNCATE TABLE dim_ranked_applicants;")
+        
+        print("Выгрузка сырых данных из staging...")
+        records = pg_hook.get_records("SELECT faculty, list_name, raw_html FROM staging_kubsu_ranked_lists;")
+        
+        if not records:
+            print("В staging таблице нет данных для парсинга.")
+            return
 
-    print("Очистка витрины dim_ranked_applicants...")
-    pg_hook.run("TRUNCATE TABLE dim_ranked_applicants;")
-
-    print("Выгрузка сырых данных из staging...")
-    records = pg_hook.get_records("SELECT faculty, list_name, raw_html FROM staging_kubsu_ranked_lists;")
-
-    if not records:
-        print("В staging таблице нет данных для парсинга.")
-        return
-
-    inserted_count = 0
-
-    for faculty, list_name, raw_html in records:
-        soup = BeautifulSoup(raw_html, 'html.parser')
-
-        tables = soup.find_all('table')
-        if not tables:
-            continue
-
-        print(f"Парсинг списка '{list_name}' ({faculty}). Найдено таблиц: {len(tables)}")
-
-        for table in tables:
-            # 1. Поиск типа конкурса и даты среза
-            list_type = "Неизвестный конкурс"
-            list_date_str = "Неизвестная дата"
-
-            current = table.find_previous(['p', 'div', 'h1', 'h2', 'h3', 'h4'])
-            p_texts = []
-            for _ in range(6):
-                if not current or current.name == 'table':
-                    break
-                txt = current.get_text(strip=True)
-                if txt:
-                    p_texts.append(txt)
-                current = current.find_previous(['p', 'div', 'h1', 'h2', 'h3', 'h4'])
-
-            for txt in p_texts:
-                if "на места" in txt or "общему конкурсу" in txt.lower():
-                    list_type = txt.replace('(', '').replace(')', '')
-                if "на" in txt and ("г." in txt or ":" in txt):
-                    list_date_str = txt
-
-            # 2. Анализ шапки таблицы для поиска точных индексов колонок приоритетов
-            header_row = table.find('tr')
-            if not header_row:
+        inserted_count = 0
+        
+        for faculty, list_name, raw_html in records:
+            soup = BeautifulSoup(raw_html, 'html.parser')
+            
+            tables = soup.find_all('table')
+            if not tables:
                 continue
-
-            headers = [th.get_text(strip=True) for th in header_row.find_all('th')]
-
-            # Ищем индекс для каждого приоритета (None, если приоритета нет на этом направлении)
-            idx_1 = headers.index('1') if '1' in headers else None
-            idx_2 = headers.index('2') if '2' in headers else None
-            idx_3 = headers.index('3') if '3' in headers else None
-            idx_4 = headers.index('4') if '4' in headers else None
-
-            # 3. Парсинг строк с данными абитуриентов
-            rows = table.find_all('tr')
-            rows_to_insert = []
-
-            for row in rows:
-                if row.find('th'):
+                
+            print(f"Парсинг списка '{list_name}' ({faculty}). Найдено таблиц: {len(tables)}")
+            
+            for table in tables:
+                # 1. Поиск типа конкурса и даты среза
+                list_type = "Неизвестный конкурс"
+                list_date_str = "Неизвестная дата"
+                
+                current = table.find_previous(['p', 'div', 'h1', 'h2', 'h3', 'h4'])
+                p_texts = []
+                for _ in range(6):
+                    if not current or current.name == 'table':
+                        break
+                    txt = current.get_text(strip=True)
+                    if txt:
+                        p_texts.append(txt)
+                    current = current.find_previous(['p', 'div', 'h1', 'h2', 'h3', 'h4'])
+                
+                for txt in p_texts:
+                    if "на места" in txt or "общему конкурсу" in txt.lower():
+                        list_type = txt.replace('(', '').replace(')', '')
+                    if "на" in txt and ("г." in txt or ":" in txt):
+                        list_date_str = txt
+                
+                # 2. Анализ шапки таблицы для поиска точных индексов колонок приоритетов
+                header_row = table.find('tr')
+                if not header_row:
                     continue
+                    
+                headers = [th.get_text(strip=True) for th in header_row.find_all('th')]
+                
+                # Ищем индекс для каждого приоритета (None, если приоритета нет на этом направлении)
+                idx_1 = headers.index('1') if '1' in headers else None
+                idx_2 = headers.index('2') if '2' in headers else None
+                idx_3 = headers.index('3') if '3' in headers else None
+                idx_4 = headers.index('4') if '4' in headers else None
+                
+                # 3. Парсинг строк с данными абитуриентов
+                rows = table.find_all('tr')
+                rows_to_insert = []
+                
+                for row in rows:
+                    if row.find('th'):
+                        continue
+                        
+                    cells = row.find_all(['td', 'th'])
+                    if len(cells) < 4:
+                        continue
+                        
+                    try:
+                        pos_number_raw = cells.get_text(strip=True)
+                        snils_or_id = cells.get_text(strip=True).replace('*', '').strip()
+                        total_score_raw = cells.get_text(strip=True)
+                        agreement_raw = cells[-1].get_text(strip=True).lower()
+                        
+                        pos_number = int(pos_number_raw) if pos_number_raw.isdigit() else None
+                        total_score = int(total_score_raw) if total_score_raw.isdigit() else 0
+                        
+                        # Функция для безопасного извлечения балла по индексу колонки
+                        def get_score_by_idx(idx):
+                            if idx is not None and idx < len(cells):
+                                txt = cells[idx].get_text(strip=True)
+                                return int(txt) if txt.isdigit() else 0
+                            return None
+                        
+                        # Извлекаем баллы по каждому из 4-х полей предметов
+                        score_1 = get_score_by_idx(idx_1)
+                        score_2 = get_score_by_idx(idx_2)
+                        score_3 = get_score_by_idx(idx_3)
+                        score_4 = get_score_by_idx(idx_4) # Будет None (NULL в базе), если колонки '4' нет
+                        
+                        has_original_documents = True if "да" in agreement_raw or "оригинал" in agreement_raw else False
+                        
+                        if pos_number is not None and snils_or_id:
+                            rows_to_insert.append((
+                                faculty, list_name, list_type, list_date_str,
+                                pos_number, snils_or_id, total_score, 
+                                score_1, score_2, score_3, score_4, 
+                                has_original_documents
+                            ))
+                    except Exception as cell_err:
+                        continue
+                
+                # 4. Вставка пачки в Postgres
+                if rows_to_insert:
+                    pg_hook.insert_rows(
+                        table='dim_ranked_applicants', 
+                        rows=rows_to_insert, 
+                        target_fields=[
+                            'faculty', 'direction', 'list_type', 'list_date_str', 
+                            'pos_number', 'snils_or_id', 'total_score', 
+                            'subject_1', 'subject_2', 'subject_3', 'subject_4', 
+                            'has_original_documents'
+                        ]
+                    )
+                    inserted_count += len(rows_to_insert)
 
-                cells = row.find_all(['td', 'th'])
-                if len(cells) < 4:
-                    continue
-
-                try:
-                    pos_number_raw = cells.get_text(strip=True)
-                    snils_or_id = cells.get_text(strip=True).replace('*', '').strip()
-                    total_score_raw = cells.get_text(strip=True)
-                    agreement_raw = cells[-1].get_text(strip=True).lower()
-
-                    pos_number = int(pos_number_raw) if pos_number_raw.isdigit() else None
-                    total_score = int(total_score_raw) if total_score_raw.isdigit() else 0
-
-                    # Функция для безопасного извлечения балла по индексу колонки
-                    def get_score_by_idx(idx):
-                        if idx is not None and idx < len(cells):
-                            txt = cells[idx].get_text(strip=True)
-                            return int(txt) if txt.isdigit() else 0
-                        return None
-
-                    # Извлекаем баллы по каждому из 4-х полей предметов
-                    score_1 = get_score_by_idx(idx_1)
-                    score_2 = get_score_by_idx(idx_2)
-                    score_3 = get_score_by_idx(idx_3)
-                    score_4 = get_score_by_idx(idx_4) # Будет None (NULL в базе), если колонки '4' нет
-
-                    has_original_documents = True if "да" in agreement_raw or "оригинал" in agreement_raw else False
-
-                    if pos_number is not None and snils_or_id:
-                        rows_to_insert.append((
-                            faculty, list_name, list_type, list_date_str,
-                            pos_number, snils_or_id, total_score, 
-                            score_1, score_2, score_3, score_4, 
-                            has_original_documents
-                        ))
-                except Exception as cell_err:
-                    continue
-
-            # 4. Вставка пачки в Postgres
-            if rows_to_insert:
-                pg_hook.insert_rows(
-                    table='dim_ranked_applicants', 
-                    rows=rows_to_insert, 
-                    target_fields=[
-                        'faculty', 'direction', 'list_type', 'list_date_str', 
-                        'pos_number', 'snils_or_id', 'total_score', 
-                        'subject_1', 'subject_2', 'subject_3', 'subject_4', 
-                        'has_original_documents'
-                    ]
-                )
-                inserted_count += len(rows_to_insert)
-
-    print(f"Парсинг успешно завершён! В витрину записано {inserted_count} строк с разделением на 4 предмета.")
-
+        print(f"Парсинг успешно завершён! В витрину записано {inserted_count} строк с разделением на 4 предмета.")
 
     # Названия вызовов ваших тасок
     extract_task = extract_and_upload_to_s3()
