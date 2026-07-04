@@ -3,7 +3,7 @@ import re
 import requests
 from bs4 import BeautifulSoup
 from airflow import DAG
-from airflow.sdk.decorators import task
+from airflow.decorators import task
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
 
 # Константы
