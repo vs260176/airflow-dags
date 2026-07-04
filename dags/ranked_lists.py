@@ -40,7 +40,7 @@ default_args = {
 }
 
 with DAG(
-    dag_id='kubsu_abitlist_to_minio',
+    dag_id='kubsu_abitlist_to_postgres',
     default_args=default_args,
     description='Парсинг списков абитуриентов КубГУ и загрузка в MinIO S3',
     schedule='@daily',
