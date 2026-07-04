@@ -215,37 +215,36 @@ with DAG(
             print(f"Парсинг списка '{list_name}' ({faculty}). Найдено таблиц: {len(tables)}")
             
             for table in tables:
-                # 1. ИСПРАВЛЕНО: Сбор метаданных (тип конкурса и дата среза) из контейнера над таблицей
-                list_type = "На места по общему конкурсу"  # дефолт для большинства списков
+                # 1. ИСПРАВЛЕНО: Безопасный глобальный поиск типа конкурса и даты на всей странице
+                list_type = "На места по общему конкурсу"
                 list_date_str = "Неизвестная дата"
                 
-                # Собираем вообще весь текст, идущий до таблицы на странице
-                top_container = table.find_parent(['body', 'div', 'center'])
-                if top_container:
-                    top_text = top_container.get_text('\n')
-                    for line in top_text.split('\n'):
-                        line_clean = line.strip()
-                        if not line_clean:
-                            continue
-                        if "на места" in line_clean.lower() or "конкурсу" in line_clean.lower():
-                            list_type = line_clean.replace('(', '').replace(')', '').strip()
-                        if "на " in line_clean.lower() and ("г." in line_clean.lower() or ":" in line_clean.lower()):
-                            list_date_str = line_clean.strip()
-
-                # 2. ИСПРАВЛЕНО: Динамический поиск индексов приоритетов, приоритета и договора в шапке
+                all_p_tags = soup.find_all('p')
+                for p in all_p_tags:
+                    txt = p.get_text(strip=True)
+                    if not txt:
+                        continue
+                    # Ищем тип конкурса (целевой, особого права, общий)
+                    if "на места" in txt.lower() or "конкурсу" in txt.lower():
+                        list_type = txt.replace('(', '').replace(')', '').strip()
+                    # Ищем дату публикации списка
+                    if "на " in txt.lower() and ("г." in txt.lower() or ":" in txt.lower()) and "заявление" not in txt.lower():
+                        list_date_str = txt.strip()
+                
+                # 2. ИСПРАВЛЕНО: Точный расчет индексов колонок строго по тегам <th>
                 header_row = table.find('tr')
                 if not header_row:
                     continue
                     
-                headers = [th.get_text(strip=True).lower() for th in header_row.find_all(['th', 'td'])]
+                # Собираем чистый список заголовков из th
+                headers = [th.get_text(strip=True).strip().lower() for th in header_row.find_all('th')]
                 
-                # Индексы предметов (ищем точное совпадение с цифрами в нижнем регистре)
+                # Строгое сопоставление индексов (цифры должны быть равны тексту в th)
                 idx_1 = headers.index('1') if '1' in headers else None
                 idx_2 = headers.index('2') if '2' in headers else None
                 idx_3 = headers.index('3') if '3' in headers else None
                 idx_4 = headers.index('4') if '4' in headers else None
                 
-                # ИСПРАВЛЕНО: Ищем индексы для Приоритета и Договора/Согласия по ключевым словам
                 idx_priority = None
                 idx_agreement = None
                 
@@ -254,10 +253,6 @@ with DAG(
                         idx_priority = i
                     if "согласие" in h or "договор" in h or "оригинал" in h:
                         idx_agreement = i
-
-                # Если колонка договора не нашлась по тексту, по умолчанию берем самую последнюю колонку
-                if idx_agreement == None:
-                    idx_agreement = len(headers) - 1
 
                 # 3. Парсинг строк абитуриентов
                 rows = table.find_all('tr')
@@ -279,27 +274,29 @@ with DAG(
                         
                         pos_number_raw = ord_cell.get_text(strip=True) if ord_cell else cells[0].get_text(strip=True)
                         snils_or_id = fio_cell.get_text(strip=True).replace('*', '').strip() if fio_cell else cells[1].get_text(strip=True).replace('*', '').strip()
+                        
+                        # Сумма баллов всегда лежит в первой ячейке с классом note
                         total_score_raw = note_cells[0].get_text(strip=True) if note_cells else cells[2].get_text(strip=True)
                         
                         pos_number = int(pos_number_raw) if pos_number_raw.isdigit() else None
                         total_score = int(total_score_raw) if total_score_raw.isdigit() else 0
                         
-                        # Функция извлечения числовых баллов
                         def get_score_by_idx(idx):
                             if idx is not None and idx < len(cells):
                                 txt = cells[idx].get_text(strip=True)
                                 return int(txt) if txt.isdigit() else 0
                             return None
                         
+                        # Сбор оценок по предметам
                         score_1 = get_score_by_idx(idx_1)
                         score_2 = get_score_by_idx(idx_2)
                         score_3 = get_score_by_idx(idx_3)
                         score_4 = get_score_by_idx(idx_4)
                         
-                        # ИСПРАВЛЕНО: Извлекаем значение поля Приоритет
+                        # Сбор приоритета
                         priority = get_score_by_idx(idx_priority)
                         
-                        # ИСПРАВЛЕНО: Проверка согласия/договора по динамическому индексу
+                        # Проверка Согласия / Договора
                         has_original_documents = False
                         if idx_agreement is not None and idx_agreement < len(cells):
                             agreement_txt = cells[idx_agreement].get_text(strip=True).lower()
@@ -314,9 +311,10 @@ with DAG(
                                 priority, has_original_documents
                             ))
                     except Exception as cell_err:
+                        print(f"Ошибка строки абитуриента: {cell_err}")
                         continue
                 
-                # 4. Запись батча в Postgres
+                # 4. Вставка пакета данных в Postgres
                 if rows_to_insert:
                     pg_hook.insert_rows(
                         table='dim_ranked_applicants', 
