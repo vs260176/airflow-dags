@@ -79,6 +79,7 @@ with DAG(
 
         print(f"Запрос главной страницы: {START_URL}")
         response = session.get(START_URL, headers=BROWSER_HEADERS, timeout=15) # Уменьшили таймаут до 15с, чтобы ретраи срабатывали быстрее
+        response.encoding = 'utf-8'
         response.raise_for_status()
 
         soup = BeautifulSoup(response.text, 'html.parser')
@@ -121,6 +122,7 @@ with DAG(
                     print(f"Скачивание страницы: {full_page_url} ({link_text})")
                     # Сессия сама сделает до 3 попыток, если files.kubsu.ru выбросит ConnectTimeout
                     page_res = session.get(full_page_url, headers=BROWSER_HEADERS, timeout=15)
+                    page_res.encoding = 'utf-8'
                     page_res.raise_for_status()
 
                     page_soup = BeautifulSoup(page_res.text, 'html.parser')
