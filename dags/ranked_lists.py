@@ -152,6 +152,44 @@ with DAG(
                     print(f"Ошибка после повторных попыток для страницы {full_page_url}: {e}")
 
     @task
+    def load_s3_to_postgres_staging():
+        s3_hook = S3Hook(aws_conn_id=AWS_CONN_ID)
+        pg_hook = PostgresHook(postgres_conn_id=POSTGRES_CONN_ID)
+
+        # Очищаем staging-таблицу перед новой загрузкой, чтобы данные не дублировались
+        print("Очистка staging таблицы...")
+        pg_hook.run("TRUNCATE TABLE staging_kubsu_ranked_lists;")
+
+        # Получаем список всех файлов из нашего бакета
+        print(f"Сканирование бакета {BUCKET_NAME}...")
+        keys = s3_hook.list_keys(bucket_name=BUCKET_NAME)
+
+        if not keys:
+            print("В S3 не найдено файлов для загрузки в БД.")
+            return
+
+        for key in keys:
+            # Извлекаем название факультета и файла из структуры S3 (Факультет/Файл.html)
+            if '/' in key:
+                faculty, filename = key.split('/', 1)
+                list_name = filename.replace('.html', '').replace('_', ' ')
+            else:
+                continue
+
+            print(f"Читаем из S3 и пишем в Postgres: {key}")
+            # Читаем HTML-контент файла из MinIO
+            raw_html = s3_hook.read_key(key, bucket_name=BUCKET_NAME)
+
+            # Записываем сырой HTML в Postgres
+            sql = """
+                INSERT INTO staging_kubsu_ranked_lists (faculty, list_name, raw_html)
+                VALUES (%s, %s, %s);
+            """
+            pg_hook.run(sql, parameters=(faculty, list_name, raw_html))
+
+        print("Все файлы успешно перенесены в staging_kubsu_ranked_lists!")
+
+    @task
     def transform_staging_to_dim():
         pg_hook = PostgresHook(postgres_conn_id=POSTGRES_CONN_ID)
         
