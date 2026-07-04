@@ -114,4 +114,5 @@ astro dev start
 
 ```bash
 pip install beautifulsoup4 apache-airflow-providers-amazon apache-airflow
+pip install apache-airflow-providers-postgres
 ```

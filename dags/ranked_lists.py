@@ -6,12 +6,14 @@ from bs4 import BeautifulSoup
 from airflow import DAG
 from airflow.decorators import task
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
+from airflow.providers.postgres.hooks.postgres import PostgresHook
 
 # Константы
 BASE_URL = "https://www.kubsu.ru"
 START_URL = f"{BASE_URL}/ru/abitlist"
 BUCKET_NAME = "ranked-lists"
 AWS_CONN_ID = "minio_logs"
+POSTGRES_CONN_ID = "postgre_k8s"
 
 TARGET_FACULTIES = [
     "Факультет компьютерных технологий и прикладной математики",
@@ -47,7 +49,7 @@ with DAG(
 ) as dag:
 
     @task
-    def parse_links_and_upload():
+    def extract_and_upload_to_s3():
         # Отключаем IPv6, так как files.kubsu.ru может не иметь IPv6 маршрутов в вашем K8s
         requests.packages.urllib3.util.connection.HAS_IPV6 = False
         requests.packages.urllib3.disable_warnings()
@@ -149,4 +151,44 @@ with DAG(
                     # Если даже после 3 попыток страница не скачалась, пишем ошибку, но НЕ ломаем цикл для других файлов
                     print(f"Ошибка после повторных попыток для страницы {full_page_url}: {e}")
 
-    parse_links_and_upload()
+    @task
+    def load_s3_to_postgres_staging():
+        s3_hook = S3Hook(aws_conn_id=AWS_CONN_ID)
+        pg_hook = PostgresHook(postgres_conn_id=POSTGRES_CONN_ID)
+        
+        # Очищаем staging-таблицу перед новой загрузкой, чтобы данные не дублировались
+        print("Очистка staging таблицы...")
+        pg_hook.run("TRUNCATE TABLE staging_kubsu_ranked_lists;")
+        
+        # Получаем список всех файлов из нашего бакета
+        print(f"Сканирование бакета {BUCKET_NAME}...")
+        keys = s3_hook.list_keys(bucket_name=BUCKET_NAME)
+        
+        if not keys:
+            print("В S3 не найдено файлов для загрузки в БД.")
+            return
+
+        for key in keys:
+            # Извлекаем название факультета и файла из структуры S3 (Факультет/Файл.html)
+            if '/' in key:
+                faculty, filename = key.split('/', 1)
+                list_name = filename.replace('.html', '').replace('_', ' ')
+            else:
+                continue
+                
+            print(f"Читаем из S3 и пишем в Postgres: {key}")
+            # Читаем HTML-контент файла из MinIO
+            raw_html = s3_hook.read_key(key, bucket_name=BUCKET_NAME)
+            
+            # Записываем сырой HTML в Postgres
+            sql = """
+                INSERT INTO staging_kubsu_ranked_lists (faculty, list_name, raw_html)
+                VALUES (%s, %s, %s);
+            """
+            pg_hook.run(sql, parameters=(faculty, list_name, raw_html))
+            
+        print("Все файлы успешно перенесены в staging_kubsu_ranked_lists!")
+
+    # Очередность выполнения задач
+    extract_and_upload_to_s3() >> load_s3_to_postgres_staging()
+
