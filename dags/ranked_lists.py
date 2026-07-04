@@ -152,44 +152,6 @@ with DAG(
                     print(f"Ошибка после повторных попыток для страницы {full_page_url}: {e}")
 
     @task
-    def load_s3_to_postgres_staging():
-        s3_hook = S3Hook(aws_conn_id=AWS_CONN_ID)
-        pg_hook = PostgresHook(postgres_conn_id=POSTGRES_CONN_ID)
-
-        # Очищаем staging-таблицу перед новой загрузкой, чтобы данные не дублировались
-        print("Очистка staging таблицы...")
-        pg_hook.run("TRUNCATE TABLE staging_kubsu_ranked_lists;")
-
-        # Получаем список всех файлов из нашего бакета
-        print(f"Сканирование бакета {BUCKET_NAME}...")
-        keys = s3_hook.list_keys(bucket_name=BUCKET_NAME)
-
-        if not keys:
-            print("В S3 не найдено файлов для загрузки в БД.")
-            return
-
-        for key in keys:
-            # Извлекаем название факультета и файла из структуры S3 (Факультет/Файл.html)
-            if '/' in key:
-                faculty, filename = key.split('/', 1)
-                list_name = filename.replace('.html', '').replace('_', ' ')
-            else:
-                continue
-
-            print(f"Читаем из S3 и пишем в Postgres: {key}")
-            # Читаем HTML-контент файла из MinIO
-            raw_html = s3_hook.read_key(key, bucket_name=BUCKET_NAME)
-
-            # Записываем сырой HTML в Postgres
-            sql = """
-                INSERT INTO staging_kubsu_ranked_lists (faculty, list_name, raw_html)
-                VALUES (%s, %s, %s);
-            """
-            pg_hook.run(sql, parameters=(faculty, list_name, raw_html))
-
-        print("Все файлы успешно перенесены в staging_kubsu_ranked_lists!")
-
-    @task
     def transform_staging_to_dim():
         pg_hook = PostgresHook(postgres_conn_id=POSTGRES_CONN_ID)
         
@@ -215,7 +177,6 @@ with DAG(
             print(f"Парсинг списка '{list_name}' ({faculty}). Найдено таблиц: {len(tables)}")
             
             for table in tables:
-                # 1. Поиск типа конкурса и даты среза
                 list_type = "Неизвестный конкурс"
                 list_date_str = "Неизвестная дата"
                 
@@ -235,20 +196,17 @@ with DAG(
                     if "на" in txt and ("г." in txt or ":" in txt):
                         list_date_str = txt
                 
-                # 2. Анализ шапки таблицы для поиска точных индексов колонок приоритетов
                 header_row = table.find('tr')
                 if not header_row:
                     continue
                     
                 headers = [th.get_text(strip=True) for th in header_row.find_all('th')]
                 
-                # Ищем индекс для каждого приоритета (None, если приоритета нет на этом направлении)
                 idx_1 = headers.index('1') if '1' in headers else None
                 idx_2 = headers.index('2') if '2' in headers else None
                 idx_3 = headers.index('3') if '3' in headers else None
                 idx_4 = headers.index('4') if '4' in headers else None
                 
-                # 3. Парсинг строк с данными абитуриентов
                 rows = table.find_all('tr')
                 rows_to_insert = []
                 
@@ -261,26 +219,26 @@ with DAG(
                         continue
                         
                     try:
-                        pos_number_raw = cells.get_text(strip=True)
-                        snils_or_id = cells.get_text(strip=True).replace('*', '').strip()
-                        total_score_raw = cells.get_text(strip=True)
+                        # ИСПРАВЛЕНО: берём текст из конкретных ячеек по их порядковому индексу в верстке КубГУ
+                        # cells[0] — это всегда №, cells[1] — Идентификатор, cells[2] — Сумма баллов
+                        pos_number_raw = cells[0].get_text(strip=True)
+                        snils_or_id = cells[1].get_text(strip=True).replace('*', '').strip()
+                        total_score_raw = cells[2].get_text(strip=True)
                         agreement_raw = cells[-1].get_text(strip=True).lower()
                         
                         pos_number = int(pos_number_raw) if pos_number_raw.isdigit() else None
                         total_score = int(total_score_raw) if total_score_raw.isdigit() else 0
                         
-                        # Функция для безопасного извлечения балла по индексу колонки
                         def get_score_by_idx(idx):
                             if idx is not None and idx < len(cells):
                                 txt = cells[idx].get_text(strip=True)
                                 return int(txt) if txt.isdigit() else 0
                             return None
                         
-                        # Извлекаем баллы по каждому из 4-х полей предметов
                         score_1 = get_score_by_idx(idx_1)
                         score_2 = get_score_by_idx(idx_2)
                         score_3 = get_score_by_idx(idx_3)
-                        score_4 = get_score_by_idx(idx_4) # Будет None (NULL в базе), если колонки '4' нет
+                        score_4 = get_score_by_idx(idx_4)
                         
                         has_original_documents = True if "да" in agreement_raw or "оригинал" in agreement_raw else False
                         
@@ -292,9 +250,10 @@ with DAG(
                                 has_original_documents
                             ))
                     except Exception as cell_err:
+                        # ИСПРАВЛЕНО: Теперь мы увидим реальную ошибку, если что-то сломается
+                        print(f"Пропущена строка в {list_name} из-за ошибки: {cell_err}")
                         continue
                 
-                # 4. Вставка пачки в Postgres
                 if rows_to_insert:
                     pg_hook.insert_rows(
                         table='dim_ranked_applicants', 
@@ -308,7 +267,7 @@ with DAG(
                     )
                     inserted_count += len(rows_to_insert)
 
-        print(f"Парсинг успешно завершён! В витрину записано {inserted_count} строк с разделением на 4 предмета.")
+        print(f"Парсинг успешно завершён! В витрину записано {inserted_count} строк.")
 
     # Строим граф зависимостей
     extract_and_upload_to_s3() >> load_s3_to_postgres_staging() >> transform_staging_to_dim()
