@@ -37,6 +37,13 @@ with DAG(
     @task
     def parse_links_and_upload():
         s3_hook = S3Hook(aws_conn_id=AWS_CONN_ID)
+
+        # Мимикрируем под обычный браузер Chrome на Windows
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+            'Accept-Language': 'ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7'
+        }
         
         print(f"Запрос главной страницы: {START_URL}")
         response = requests.get(START_URL, timeout=30)
