@@ -215,42 +215,56 @@ with DAG(
             print(f"Парсинг списка '{list_name}' ({faculty}). Найдено таблиц: {len(tables)}")
             
             for table in tables:
-                list_type = "Неизвестный конкурс"
+                # 1. ИСПРАВЛЕНО: Сбор метаданных (тип конкурса и дата среза) из контейнера над таблицей
+                list_type = "На места по общему конкурсу"  # дефолт для большинства списков
                 list_date_str = "Неизвестная дата"
                 
-                current = table.find_previous(['p', 'div', 'h1', 'h2', 'h3', 'h4'])
-                p_texts = []
-                for _ in range(6):
-                    if not current or current.name == 'table':
-                        break
-                    txt = current.get_text(strip=True)
-                    if txt:
-                        p_texts.append(txt)
-                    current = current.find_previous(['p', 'div', 'h1', 'h2', 'h3', 'h4'])
-                
-                for txt in p_texts:
-                    if "на места" in txt or "общему конкурсу" in txt.lower():
-                        list_type = txt.replace('(', '').replace(')', '')
-                    if "на" in txt and ("г." in txt or ":" in txt):
-                        list_date_str = txt
-                
+                # Собираем вообще весь текст, идущий до таблицы на странице
+                top_container = table.find_parent(['body', 'div', 'center'])
+                if top_container:
+                    top_text = top_container.get_text('\n')
+                    for line in top_text.split('\n'):
+                        line_clean = line.strip()
+                        if not line_clean:
+                            continue
+                        if "на места" in line_clean.lower() or "конкурсу" in line_clean.lower():
+                            list_type = line_clean.replace('(', '').replace(')', '').strip()
+                        if "на " in line_clean.lower() and ("г." in line_clean.lower() or ":" in line_clean.lower()):
+                            list_date_str = line_clean.strip()
+
+                # 2. ИСПРАВЛЕНО: Динамический поиск индексов приоритетов, приоритета и договора в шапке
                 header_row = table.find('tr')
                 if not header_row:
                     continue
                     
-                headers = [th.get_text(strip=True) for th in header_row.find_all('th')]
+                headers = [th.get_text(strip=True).lower() for th in header_row.find_all(['th', 'td'])]
                 
+                # Индексы предметов (ищем точное совпадение с цифрами в нижнем регистре)
                 idx_1 = headers.index('1') if '1' in headers else None
                 idx_2 = headers.index('2') if '2' in headers else None
                 idx_3 = headers.index('3') if '3' in headers else None
                 idx_4 = headers.index('4') if '4' in headers else None
                 
+                # ИСПРАВЛЕНО: Ищем индексы для Приоритета и Договора/Согласия по ключевым словам
+                idx_priority = None
+                idx_agreement = None
+                
+                for i, h in enumerate(headers):
+                    if "приоритет" in h:
+                        idx_priority = i
+                    if "согласие" in h or "договор" in h or "оригинал" in h:
+                        idx_agreement = i
+
+                # Если колонка договора не нашлась по тексту, по умолчанию берем самую последнюю колонку
+                if idx_agreement == None:
+                    idx_agreement = len(headers) - 1
+
+                # 3. Парсинг строк абитуриентов
                 rows = table.find_all('tr')
                 rows_to_insert = []
                 
                 for row in rows:
-                    # Убираем жесткий пропуск строк с th, так как th может быть внутри обычной строки
-                    # Вместо этого проверяем, является ли строка полноценной шапкой таблицы
+                    # Пропускаем строку заголовков
                     if row.parent.name == 'thead' or (row.find('th') and "идентификатор" in row.get_text().lower()):
                         continue
                         
@@ -259,22 +273,18 @@ with DAG(
                         continue
                         
                     try:
-                        # УМНЫЙ ПОИСК ЯЧЕЕК ПО КЛАССАМ И СТРУКТУРЕ:
                         ord_cell = row.find(class_='ord')
                         fio_cell = row.find(class_='fio')
-                        note_cells = row.find_all(class_='note') # Содержит и баллы всего, и баллы по предметам
+                        note_cells = row.find_all(class_='note')
                         
-                        # Если нашли ячейки по классам — берем их, иначе откатываемся на базовые индексы
                         pos_number_raw = ord_cell.get_text(strip=True) if ord_cell else cells[0].get_text(strip=True)
                         snils_or_id = fio_cell.get_text(strip=True).replace('*', '').strip() if fio_cell else cells[1].get_text(strip=True).replace('*', '').strip()
-                        
-                        # Первая ячейка note — это сумма баллов, остальные — предметы
                         total_score_raw = note_cells[0].get_text(strip=True) if note_cells else cells[2].get_text(strip=True)
-                        agreement_raw = cells[-1].get_text(strip=True).lower()
                         
                         pos_number = int(pos_number_raw) if pos_number_raw.isdigit() else None
                         total_score = int(total_score_raw) if total_score_raw.isdigit() else 0
                         
+                        # Функция извлечения числовых баллов
                         def get_score_by_idx(idx):
                             if idx is not None and idx < len(cells):
                                 txt = cells[idx].get_text(strip=True)
@@ -286,20 +296,27 @@ with DAG(
                         score_3 = get_score_by_idx(idx_3)
                         score_4 = get_score_by_idx(idx_4)
                         
-                        has_original_documents = True if "да" in agreement_raw or "оригинал" in agreement_raw else False
+                        # ИСПРАВЛЕНО: Извлекаем значение поля Приоритет
+                        priority = get_score_by_idx(idx_priority)
                         
-                        # Если строка прошла валидацию номера и ID — добавляем её
+                        # ИСПРАВЛЕНО: Проверка согласия/договора по динамическому индексу
+                        has_original_documents = False
+                        if idx_agreement is not None and idx_agreement < len(cells):
+                            agreement_txt = cells[idx_agreement].get_text(strip=True).lower()
+                            if "да" in agreement_txt or "оригинал" in agreement_txt:
+                                has_original_documents = True
+                        
                         if pos_number is not None and snils_or_id:
                             rows_to_insert.append((
                                 faculty, list_name, list_type, list_date_str,
                                 pos_number, snils_or_id, total_score, 
                                 score_1, score_2, score_3, score_4, 
-                                has_original_documents
+                                priority, has_original_documents
                             ))
                     except Exception as cell_err:
-                        print(f"Ошибка разбора строки в списке {list_name}: {cell_err}")
                         continue
                 
+                # 4. Запись батча в Postgres
                 if rows_to_insert:
                     pg_hook.insert_rows(
                         table='dim_ranked_applicants', 
@@ -308,7 +325,7 @@ with DAG(
                             'faculty', 'direction', 'list_type', 'list_date_str', 
                             'pos_number', 'snils_or_id', 'total_score', 
                             'subject_1', 'subject_2', 'subject_3', 'subject_4', 
-                            'has_original_documents'
+                            'priority', 'has_original_documents'
                         ]
                     )
                     inserted_count += len(rows_to_insert)
