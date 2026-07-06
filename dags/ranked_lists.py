@@ -226,7 +226,7 @@ with DAG(
                 table_container = table.find_parent('div', class_='table') or table
                 current_sibling = table_container.find_previous_sibling() if table_container else None
                 
-                # [Уровень 3] Петля сбора текста над текущей таблицей
+                # [Уровень 3] Петля сбора текста строго над текущей таблицей
                 while current_sibling:
                     if current_sibling.name == 'table' or current_sibling.find('table'):
                         break
@@ -243,20 +243,25 @@ with DAG(
                         
                         txt_lower = txt.lower()
                         
-                        # 1. Ищем типы конкурсов строго по ключевым словам квот
-                        if "конкурс" in txt_lower or "квот" in txt_lower:
-                            # Игнорируем длинный текст-предупреждение правил приема
-                            if "в соответствии с разделом" not in txt_lower and "уважаемые абитуриенты" not in txt_lower:
-                                list_type = txt.replace('(', '').replace(')', '').strip()
+                        # 1. ЖЕСТКИЙ БЕЛЫЙ СПИСОК КВОТ: реагируем только на реальные типы конкурсов
+                        if "особого права" in txt_lower:
+                            list_type = "На места в рамках особого права"
+                        elif "отдельной квоты" in txt_lower:
+                            list_type = "На места в рамках отдельной квоты"
+                        elif "целевой квоты" in txt_lower:
+                            list_type = "На места в рамках целевой квоты"
+                        elif "общему конкурсу" in txt_lower:
+                            list_type = "На места по общему конкурсу"
                         
-                        # 2. Ищем дату среза (строго короткая строка, начинающаяся с "на")
-                        if txt_lower.startswith("на ") and ("г." in txt_lower or ":" in txt_lower) and len(txt) < 50:
+                        # 2. ИСПРАВЛЕНО: Жесткий фильтр для даты (длина до 35 символов, только дата среза)
+                        if txt_lower.startswith("на ") and ("г." in txt_lower or ":" in txt_lower) and len(txt) < 35:
                             list_date_str = txt.strip()
                             
                     if hasattr(current_sibling, 'find_previous_sibling'):
                         current_sibling = current_sibling.find_previous_sibling()
                     else:
                         break
+                 # [Конец Уровня 3] Вышли из while. Теперь мы знаем точные list_type и list_date_str!                        
                     
                     p_tags = current_sibling.find_all('p') if current_sibling.name != 'p' else [current_sibling]
                     for p in p_tags:
