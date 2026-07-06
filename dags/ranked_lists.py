@@ -243,13 +243,13 @@ with DAG(
                         
                         txt_lower = txt.lower()
                         
-                        # ФИКС 1: Ищем типы конкурсов строго по ключевым словам квот
+                        # 1. Ищем типы конкурсов строго по ключевым словам квот
                         if "конкурс" in txt_lower or "квот" in txt_lower:
                             # Игнорируем длинный текст-предупреждение правил приема
                             if "в соответствии с разделом" not in txt_lower and "уважаемые абитуриенты" not in txt_lower:
                                 list_type = txt.replace('(', '').replace(')', '').strip()
                         
-                        # ФИКС 2: Ищем дату среза (строго короткая строка, начинающаяся с "на")
+                        # 2. Ищем дату среза (строго короткая строка, начинающаяся с "на")
                         if txt_lower.startswith("на ") and ("г." in txt_lower or ":" in txt_lower) and len(txt) < 50:
                             list_date_str = txt.strip()
                             
