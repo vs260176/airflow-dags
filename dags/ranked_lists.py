@@ -207,6 +207,7 @@ with DAG(
 
         inserted_count = 0
         
+        # [Уровень 1] Главный цикл по страницам из базы
         for faculty, list_name, raw_html in records:
             soup = BeautifulSoup(raw_html, 'html.parser')
             
@@ -216,52 +217,47 @@ with DAG(
                 
             print(f"Парсинг списка '{list_name}' ({faculty}). Найдено таблиц: {len(tables)}")
             
-        for table in tables:
-            # 1. ИСПРАВЛЕНО: Локальный поиск метаданных строго над текущей таблицей
-            list_type = "На места по общему конкурсу"  # Дефолт, если не найдено иное
-            list_date_str = "Неизвестная дата"
-            
-            # Находим контейнер таблицы (div с классом table) или саму таблицу
-            table_container = table.find_parent('div', class_='table') or table
-            
-            # Ищем всех "соседей" сверху, пока не дойдем до предыдущей таблицы
-            current_sibling = table_container.find_previous_sibling()
-            while current_sibling:
-                # Если наткнулись на другую таблицу или контейнер другой таблицы — останавливаемся
-                if current_sibling.name == 'table' or current_sibling.find('table') or 'table' in current_sibling.get('class', []):
-                    break
+            # [Уровень 2] Цикл по таблицам внутри ОДНОЙ страницы (СДВИГАЕМ НА 12 ПРОБЕЛОВ)
+            for table in tables:
+                # 1. Сбор метаданных (тип конкурса и дата среза) — с защитой от None
+                list_type = "На места по общему конкурсу"
+                list_date_str = "Неизвестная дата"
                 
-                # Если этот сосед является тегом <p> или содержит их, проверяем текст
-                p_tags = current_sibling.find_all('p') if current_sibling.name != 'p' else [current_sibling]
+                table_container = table.find_parent('div', class_='table') or table
+                current_sibling = table_container.find_previous_sibling() if table_container else None
                 
-                for p in p_tags:
-                    txt = p.get_text(strip=True)
-                    if not txt:
-                        continue
+                # [Уровень 3] Петля сбора текста над текущей таблицей
+                while current_sibling:
+                    if current_sibling.name == 'table' or current_sibling.find('table'):
+                        break
                     
-                    # Извлекаем тип конкурса (особое право, целевая квота, отдельная квота и т.д.)
-                    if "в рамках" in txt.lower() or "общему конкурсу" in txt.lower():
-                        list_type = txt.replace('(', '').replace(')', '').strip()
-                        
-                    # Извлекаем дату среза
-                    if "на " in txt.lower() and ("г." in txt.lower() or ":" in txt.lower()) and "заявление" not in txt.lower():
-                        list_date_str = txt.strip()
-                        
-                # Переходим к следующему элементу выше
-                current_sibling = current_sibling.find_previous_sibling()
-                        
-                # Переходим к следующему элементу выше
-                z = current_sibling.find_previous_sibling()
-                
-                # 2. ИСПРАВЛЕНО: Точный расчет индексов колонок строго по тегам <th>
+                    current_classes = current_sibling.get('class', []) if hasattr(current_sibling, 'get') else []
+                    if 'table' in current_classes:
+                        break
+                    
+                    p_tags = current_sibling.find_all('p') if current_sibling.name != 'p' else [current_sibling]
+                    for p in p_tags:
+                        txt = p.get_text(strip=True)
+                        if not txt:
+                            continue
+                        if "в рамках" in txt.lower() or "конкурсу" in txt.lower():
+                            list_type = txt.replace('(', '').replace(')', '').strip()
+                        if "на " in txt.lower() and ("г." in txt.lower() or ":" in txt.lower()) and "заявление" not in txt.lower():
+                            list_date_str = txt.strip()
+                            
+                    if hasattr(current_sibling, 'find_previous_sibling'):
+                        current_sibling = current_sibling.find_previous_sibling()
+                    else:
+                        break
+                # [Конец Уровня 3] Вышли из while. Теперь мы знаем точные list_type и list_date_str!
+
+                # 2. Парсинг шапки таблицы (На уровне 16 пробелов, ВНЕ цикла while!)
                 header_row = table.find('tr')
                 if not header_row:
                     continue
                     
-                # Собираем чистый список заголовков из th
-                headers = [th.get_text(strip=True).strip().lower() for th in header_row.find_all('th')]
+                headers = [th.get_text(strip=True).strip().lower() for th in header_row.find_all(['th', 'td'])]
                 
-                # Строгое сопоставление индексов (цифры должны быть равны тексту в th)
                 idx_1 = headers.index('1') if '1' in headers else None
                 idx_2 = headers.index('2') if '2' in headers else None
                 idx_3 = headers.index('3') if '3' in headers else None
@@ -276,12 +272,14 @@ with DAG(
                     if "согласие" in h or "договор" in h or "оригинал" in h:
                         idx_agreement = i
 
-                # 3. Парсинг строк абитуриентов
+                if idx_agreement is None:
+                    idx_agreement = len(headers) - 1
+
+                # 3. Парсинг строк абитуриентов (На уровне 16 пробелов)
                 rows = table.find_all('tr')
                 rows_to_insert = []
                 
                 for row in rows:
-                    # Пропускаем строку заголовков
                     if row.parent.name == 'thead' or (row.find('th') and "идентификатор" in row.get_text().lower()):
                         continue
                         
@@ -296,8 +294,6 @@ with DAG(
                         
                         pos_number_raw = ord_cell.get_text(strip=True) if ord_cell else cells[0].get_text(strip=True)
                         snils_or_id = fio_cell.get_text(strip=True).replace('*', '').strip() if fio_cell else cells[1].get_text(strip=True).replace('*', '').strip()
-                        
-                        # Сумма баллов всегда лежит в первой ячейке с классом note
                         total_score_raw = note_cells[0].get_text(strip=True) if note_cells else cells[2].get_text(strip=True)
                         
                         pos_number = int(pos_number_raw) if pos_number_raw.isdigit() else None
@@ -309,16 +305,12 @@ with DAG(
                                 return int(txt) if txt.isdigit() else 0
                             return None
                         
-                        # Сбор оценок по предметам
                         score_1 = get_score_by_idx(idx_1)
                         score_2 = get_score_by_idx(idx_2)
                         score_3 = get_score_by_idx(idx_3)
                         score_4 = get_score_by_idx(idx_4)
-                        
-                        # Сбор приоритета
                         priority = get_score_by_idx(idx_priority)
                         
-                        # Проверка Согласия / Договора
                         has_original_documents = False
                         if idx_agreement is not None and idx_agreement < len(cells):
                             agreement_txt = cells[idx_agreement].get_text(strip=True).lower()
@@ -333,10 +325,10 @@ with DAG(
                                 priority, has_original_documents
                             ))
                     except Exception as cell_err:
-                        print(f"Ошибка строки абитуриента: {cell_err}")
+                        print(f"Ошибка строки: {cell_err}")
                         continue
                 
-                # 4. Вставка пакета данных в Postgres
+                # 4. Вставка пачки текущей таблицы в Postgres
                 if rows_to_insert:
                     pg_hook.insert_rows(
                         table='dim_ranked_applicants', 
