@@ -217,7 +217,7 @@ with DAG(
                 
             print(f"Парсинг списка '{list_name}' ({faculty}). Найдено таблиц: {len(tables)}")
             
-            # [Уровень 2] Цикл по таблицам внутри ОДНОЙ страницы (СДВИГАЕМ НА 12 ПРОБЕЛОВ)
+            # [Уровень 2] Цикл по таблицам внутри ОДНОЙ страницы
             for table in tables:
                 # 1. Сбор метаданных (тип конкурса и дата среза) — с защитой от None
                 list_type = "На места по общему конкурсу"
@@ -253,7 +253,7 @@ with DAG(
                         elif "общему конкурсу" in txt_lower:
                             list_type = "На места по общему конкурсу"
                         
-                        # 2. ИСПРАВЛЕНО: Жесткий фильтр для даты (длина до 35 символов, только дата среза)
+                        # 2. Жесткий фильтр для даты (длина до 35 символов, только дата среза)
                         if txt_lower.startswith("на ") and ("г." in txt_lower or ":" in txt_lower) and len(txt) < 35:
                             list_date_str = txt.strip()
                             
@@ -261,23 +261,7 @@ with DAG(
                         current_sibling = current_sibling.find_previous_sibling()
                     else:
                         break
-                 # [Конец Уровня 3] Вышли из while. Теперь мы знаем точные list_type и list_date_str!                        
-                    
-                    p_tags = current_sibling.find_all('p') if current_sibling.name != 'p' else [current_sibling]
-                    for p in p_tags:
-                        txt = p.get_text(strip=True)
-                        if not txt:
-                            continue
-                        if "в рамках" in txt.lower() or "конкурсу" in txt.lower():
-                            list_type = txt.replace('(', '').replace(')', '').strip()
-                        if "на " in txt.lower() and ("г." in txt.lower() or ":" in txt.lower()) and "заявление" not in txt.lower():
-                            list_date_str = txt.strip()
-                            
-                    if hasattr(current_sibling, 'find_previous_sibling'):
-                        current_sibling = current_sibling.find_previous_sibling()
-                    else:
-                        break
-                # [Конец Уровня 3] Вышли из while. Теперь мы знаем точные list_type и list_date_str!
+                # [Конец Уровня 3] Вышли из while. Теперь мы знаем точные list_type и list_date_str!                        
 
                 # 2. Парсинг шапки таблицы (На уровне 16 пробелов, ВНЕ цикла while!)
                 header_row = table.find('tr')
@@ -320,8 +304,11 @@ with DAG(
                         fio_cell = row.find(class_='fio')
                         note_cells = row.find_all(class_='note')
                         
+                        # Безопасное извлечение текстов из ячеек
                         pos_number_raw = ord_cell.get_text(strip=True) if ord_cell else cells[0].get_text(strip=True)
                         snils_or_id = fio_cell.get_text(strip=True).replace('*', '').strip() if fio_cell else cells[1].get_text(strip=True).replace('*', '').strip()
+                        
+                        # Общая сумма баллов — это всегда первый элемент из note_cells или ячейка под индексом 2
                         total_score_raw = note_cells[0].get_text(strip=True) if note_cells else cells[2].get_text(strip=True)
                         
                         pos_number = int(pos_number_raw) if pos_number_raw.isdigit() else None
@@ -356,7 +343,7 @@ with DAG(
                         print(f"Ошибка строки: {cell_err}")
                         continue
                 
-                # 4. Вставка пачки текущей таблицы в Postgres
+                # 4. Вставка пачки текущей таблицы в Postgres (На уровне 16 пробелов)
                 if rows_to_insert:
                     pg_hook.insert_rows(
                         table='dim_ranked_applicants', 
