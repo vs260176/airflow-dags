@@ -216,22 +216,42 @@ with DAG(
                 
             print(f"Парсинг списка '{list_name}' ({faculty}). Найдено таблиц: {len(tables)}")
             
-            for table in tables:
-                # 1. ИСПРАВЛЕНО: Безопасный глобальный поиск типа конкурса и даты на всей странице
-                list_type = "На места по общему конкурсу"
-                list_date_str = "Неизвестная дата"
+        for table in tables:
+            # 1. ИСПРАВЛЕНО: Локальный поиск метаданных строго над текущей таблицей
+            list_type = "На места по общему конкурсу"  # Дефолт, если не найдено иное
+            list_date_str = "Неизвестная дата"
+            
+            # Находим контейнер таблицы (div с классом table) или саму таблицу
+            table_container = table.find_parent('div', class_='table') or table
+            
+            # Ищем всех "соседей" сверху, пока не дойдем до предыдущей таблицы
+            current_sibling = table_container.find_previous_sibling()
+            while current_sibling:
+                # Если наткнулись на другую таблицу или контейнер другой таблицы — останавливаемся
+                if current_sibling.name == 'table' or current_sibling.find('table') or 'table' in current_sibling.get('class', []):
+                    break
                 
-                all_p_tags = soup.find_all('p')
-                for p in all_p_tags:
+                # Если этот сосед является тегом <p> или содержит их, проверяем текст
+                p_tags = current_sibling.find_all('p') if current_sibling.name != 'p' else [current_sibling]
+                
+                for p in p_tags:
                     txt = p.get_text(strip=True)
                     if not txt:
                         continue
-                    # Ищем тип конкурса (целевой, особого права, общий)
-                    if "на места" in txt.lower() or "конкурсу" in txt.lower():
+                    
+                    # Извлекаем тип конкурса (особое право, целевая квота, отдельная квота и т.д.)
+                    if "в рамках" in txt.lower() or "общему конкурсу" in txt.lower():
                         list_type = txt.replace('(', '').replace(')', '').strip()
-                    # Ищем дату публикации списка
+                        
+                    # Извлекаем дату среза
                     if "на " in txt.lower() and ("г." in txt.lower() or ":" in txt.lower()) and "заявление" not in txt.lower():
                         list_date_str = txt.strip()
+                        
+                # Переходим к следующему элементу выше
+                current_sibling = current_sibling.find_previous_sibling()
+                        
+                # Переходим к следующему элементу выше
+                z = current_sibling.find_previous_sibling()
                 
                 # 2. ИСПРАВЛЕНО: Точный расчет индексов колонок строго по тегам <th>
                 header_row = table.find('tr')
