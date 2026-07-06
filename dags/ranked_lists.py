@@ -240,6 +240,29 @@ with DAG(
                         txt = p.get_text(strip=True)
                         if not txt:
                             continue
+                        
+                        txt_lower = txt.lower()
+                        
+                        # ФИКС 1: Ищем типы конкурсов строго по ключевым словам квот
+                        if "конкурс" in txt_lower or "квот" in txt_lower:
+                            # Игнорируем длинный текст-предупреждение правил приема
+                            if "в соответствии с разделом" not in txt_lower and "уважаемые абитуриенты" not in txt_lower:
+                                list_type = txt.replace('(', '').replace(')', '').strip()
+                        
+                        # ФИКС 2: Ищем дату среза (строго короткая строка, начинающаяся с "на")
+                        if txt_lower.startswith("на ") and ("г." in txt_lower or ":" in txt_lower) and len(txt) < 50:
+                            list_date_str = txt.strip()
+                            
+                    if hasattr(current_sibling, 'find_previous_sibling'):
+                        current_sibling = current_sibling.find_previous_sibling()
+                    else:
+                        break
+                    
+                    p_tags = current_sibling.find_all('p') if current_sibling.name != 'p' else [current_sibling]
+                    for p in p_tags:
+                        txt = p.get_text(strip=True)
+                        if not txt:
+                            continue
                         if "в рамках" in txt.lower() or "конкурсу" in txt.lower():
                             list_type = txt.replace('(', '').replace(')', '').strip()
                         if "на " in txt.lower() and ("г." in txt.lower() or ":" in txt.lower()) and "заявление" not in txt.lower():
