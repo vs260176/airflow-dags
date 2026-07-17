@@ -74,11 +74,26 @@ with DAG(
                 continue
             
             parent_tag = faculty_element.parent
-            links_list = parent_tag.find_next('ul')
-            if not links_list:
+            
+            # --- ОБНОВЛЕННАЯ ЛОГИКА НАВИГАЦИИ ПО НОВОЙ СТРУКТУРЕ ---
+            # 1. Находим первый тег <hr /> после заголовка факультета
+            first_hr = parent_tag.find_next('hr')
+            if not first_hr:
+                print(f"Предупреждение: для {faculty_name} не найден первый <hr />")
                 continue
-                
-            links = links_list.find_all('a', href=True)
+            
+            # 2. Собираем все теги <a> из списков <ul> строго до второго <hr />
+            links = []
+            for sibling in first_hr.find_next_siblings():
+                if sibling.name == 'hr':  # Дошли до второго hr — останавливаем сбор (бакалавриат закончился)
+                    break
+                if sibling.name == 'ul':  # Нашли список со специальностями между hr
+                    links.extend(sibling.find_all('a', href=True))
+            
+            if not links:
+                print(f"Предупреждение: для {faculty_name} не найдены ссылки между <hr />")
+                continue
+            # ------------------------------------------------------
             
             for link in links:
                 link_text = link.get_text(strip=True)
