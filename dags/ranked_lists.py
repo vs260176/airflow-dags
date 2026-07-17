@@ -74,26 +74,39 @@ with DAG(
                 continue
             
             parent_tag = faculty_element.parent
-            
-            # --- ОБНОВЛЕННАЯ ЛОГИКА НАВИГАЦИИ ПО НОВОЙ СТРУКТУРЕ ---
-            # 1. Находим первый тег <hr /> после заголовка факультета
-            first_hr = parent_tag.find_next('hr')
-            if not first_hr:
-                print(f"Предупреждение: для {faculty_name} не найден первый <hr />")
-                continue
-            
-            # 2. Собираем все теги <a> из списков <ul> строго до второго <hr />
             links = []
-            for sibling in first_hr.find_next_siblings():
-                if sibling.name == 'hr':  # Дошли до второго hr — останавливаем сбор (бакалавриат закончился)
-                    break
-                if sibling.name == 'ul':  # Нашли список со специальностями между hr
-                    links.extend(sibling.find_all('a', href=True))
+
+            # --- РАЗВЕТВЛЕНИЕ ЛОГИКИ В ЗАВИСИМОСТИ ОТ ФАКУЛЬТЕТА ---
+            if "Экономический факультет" in faculty_name:
+                # Старая логика: берем самый первый <ul> после заголовка факультета
+                links_list = parent_tag.find_next('ul')
+                if links_list:
+                    links = links_list.find_all('a', href=True)
+                    
+            elif "Факультет компьютерных технологий и прикладной математики" in faculty_name:
+                # Новая логика: ищем ссылки в <ul> строго между первым и вторым <hr />
+                first_hr = parent_tag.find_next('hr')
+                if first_hr:
+                    for sibling in first_hr.find_next_siblings():
+                        if sibling.name == 'hr':  # Дошли до второго hr — стоп
+                            break
+                        if sibling.name == 'ul':  # Собираем ссылки из списков между ними
+                            links.extend(sibling.find_all('a', href=True))
+                else:
+                    print(f"Предупреждение: для {faculty_name} не найден первый <hr />")
+            
+            else:
+                # Дефолтный вариант (на случай, если в TARGET_FACULTIES есть другие факультеты)
+                # Например, можно оставить старую логику по умолчанию:
+                links_list = parent_tag.find_next('ul')
+                if links_list:
+                    links = links_list.find_all('a', href=True)
+            # ------------------------------------------------------
             
             if not links:
-                print(f"Предупреждение: для {faculty_name} не найдены ссылки между <hr />")
+                print(f"Предупреждение: для {faculty_name} не удалось собрать ссылки")
                 continue
-            # ------------------------------------------------------
+
             
             for link in links:
                 link_text = link.get_text(strip=True)
